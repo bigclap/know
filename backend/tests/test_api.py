@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.main import create_app
+from app.services.context_navigator import ContextResult, SearchHit
+from app.services.orchestrator import GenerationRequest, GenerationResponse
 from app.repositories import (
     ArtifactRepository,
     MessageRepository,
@@ -16,13 +18,39 @@ from app.repositories import (
 )
 
 
+class FakeOrchestrator:
+    def __init__(self) -> None:
+        self.requests: list[GenerationRequest] = []
+
+    async def respond(self, request: GenerationRequest) -> GenerationResponse:
+        self.requests.append(request)
+        return GenerationResponse(
+            content="Ответ ассистента",
+            context=ContextResult(
+                query=request.user_message,
+                artifacts=[
+                    SearchHit(id="a1", score=0.9, payload={"title": "Artifact"}),
+                ],
+                messages=[SearchHit(id="m1", score=0.8, payload={"content": "Message"})],
+                structured_entries=[
+                    SearchHit(id="s1", score=0.7, payload={"text": "Structured"}),
+                ],
+            ),
+        )
+
+
 @pytest.fixture()
-def app(monkeypatch: pytest.MonkeyPatch):
+def fake_orchestrator() -> FakeOrchestrator:
+    return FakeOrchestrator()
+
+
+@pytest.fixture()
+def app(monkeypatch: pytest.MonkeyPatch, fake_orchestrator: FakeOrchestrator):
     """Build an application instance backed by an in-memory database."""
 
     get_settings.cache_clear()
     monkeypatch.setenv("KNOW_DATABASE_URL", "sqlite://")
-    return create_app()
+    return create_app(orchestrator=fake_orchestrator)
 
 
 @pytest.fixture()
@@ -44,21 +72,32 @@ def artifact(session_factory) -> UUID:
         return artifact.id
 
 
-def test_post_chat_message_creates_message(client, session_factory, artifact):
+def test_post_chat_message_triggers_ai_and_persists_messages(client, session_factory, artifact, fake_orchestrator):
     payload = {"artifact_id": str(artifact), "content": "Привет", "sender": "user"}
 
     response = client.post("/chat/message", json=payload)
 
     assert response.status_code == 200
     body = response.json()
-    assert body["artifact_id"] == str(artifact)
-    assert body["content"] == "Привет"
-    assert body["sender"] == "user"
+    assert body["user_message"]["artifact_id"] == str(artifact)
+    assert body["user_message"]["content"] == "Привет"
+    assert body["assistant_message"]["content"] == "Ответ ассистента"
+    assert body["assistant_message"]["sender"] == "assistant"
+    assert body["context"]["query"] == "Привет"
+    assert body["context"]["artifacts"][0]["id"] == "a1"
+
+    assert fake_orchestrator.requests
+    request = fake_orchestrator.requests[0]
+    assert request.user_message == "Привет"
+    assert list(request.conversation_history) == []
 
     with session_factory() as session:
         messages = MessageRepository(session).list_for_artifact(artifact_id=artifact)
-        assert len(messages) == 1
+        assert len(messages) == 2
         assert messages[0].content == "Привет"
+        assert messages[0].sender == "user"
+        assert messages[1].content == "Ответ ассистента"
+        assert messages[1].sender == "assistant"
 
 
 def test_get_artifact_returns_nested_payload(client, session_factory, artifact):
