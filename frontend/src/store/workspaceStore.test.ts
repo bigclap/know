@@ -10,7 +10,7 @@ const mockFetch = (payload: unknown) => {
       get: () => 'application/json',
     },
     json: async () => payload,
-  } as Partial<Response>;
+  } as unknown as Partial<Response>;
   const fetchMock = vi.fn().mockResolvedValue(response);
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';
 import { AppProviders } from './providers/AppProviders';
 import { createAppRouter } from './routes';
+import './styles/index.css';
 
 const router = createAppRouter();
 
