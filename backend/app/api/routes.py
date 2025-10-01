@@ -3,20 +3,26 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Mapping
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from sqlmodel import Session
 
+from ..models import Message
 from ..repositories import ArtifactRepository, LinkRepository, MessageRepository
+from ..services.context_navigator import ContextResult, SearchHit
+from ..services.orchestrator import GenerationRequest, KnowledgeOrchestrator
 from .schemas import (
     ArtifactChildSummary,
     ArtifactDetailResponse,
     ChatMessageRequest,
     ChatMessageResponse,
+    ChatResponse,
+    ContextResponse,
     LinkCreateRequest,
     LinkResponse,
+    SearchHitResponse,
     StructuredEntryResponse,
 )
 from .session import SessionProvider
@@ -26,7 +32,7 @@ def _sorted_by_created(items: list[Any]) -> list[Any]:
     return sorted(items, key=lambda item: getattr(item, "created_at", datetime.min))
 
 
-def create_router(session_provider: SessionProvider) -> APIRouter:
+def create_router(session_provider: SessionProvider, orchestrator: KnowledgeOrchestrator) -> APIRouter:
     """Build an ``APIRouter`` wired with repository dependencies."""
 
     router = APIRouter()
@@ -34,11 +40,15 @@ def create_router(session_provider: SessionProvider) -> APIRouter:
     def get_session() -> Any:
         yield from session_provider.dependency()
 
-    @router.post("/chat/message", response_model=ChatMessageResponse)
-    def post_chat_message(
+    def get_orchestrator() -> KnowledgeOrchestrator:
+        return orchestrator
+
+    @router.post("/chat/message", response_model=ChatResponse)
+    async def post_chat_message(
         payload: ChatMessageRequest,
         session: Session = Depends(get_session),
-    ) -> ChatMessageResponse:
+        ai_orchestrator: KnowledgeOrchestrator = Depends(get_orchestrator),
+    ) -> ChatResponse:
         artifact_repo = ArtifactRepository(session)
         message_repo = MessageRepository(session)
 
@@ -46,13 +56,33 @@ def create_router(session_provider: SessionProvider) -> APIRouter:
         if artifact is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
 
-        message = message_repo.create(
+        history_messages = message_repo.list_for_artifact(artifact_id=artifact.id)
+        conversation_history = tuple(_message_to_prompt_dict(message) for message in history_messages)
+
+        user_message = message_repo.create(
             artifact=artifact,
             content=payload.content,
             sender=payload.sender,
         )
 
-        return ChatMessageResponse.model_validate(message)
+        generation = await ai_orchestrator.respond(
+            GenerationRequest(
+                user_message=user_message.content,
+                conversation_history=conversation_history,
+            )
+        )
+
+        assistant_message = message_repo.create(
+            artifact=artifact,
+            content=generation.content,
+            sender="assistant",
+        )
+
+        return ChatResponse(
+            user_message=ChatMessageResponse.model_validate(user_message),
+            assistant_message=ChatMessageResponse.model_validate(assistant_message),
+            context=_map_context_result(generation.context),
+        )
 
     @router.get("/artifacts/{artifact_id}", response_model=ArtifactDetailResponse)
     def get_artifact(
@@ -141,3 +171,28 @@ def create_router(session_provider: SessionProvider) -> APIRouter:
             return
 
     return router
+
+
+def _message_to_prompt_dict(message: Message) -> Mapping[str, str]:
+    sender = (message.sender or "user").lower()
+    if sender not in {"assistant", "system", "user"}:
+        sender = "user"
+    return {"role": sender, "content": message.content}
+
+
+def _map_context_result(result: ContextResult) -> ContextResponse:
+    return ContextResponse(
+        query=result.query,
+        artifacts=[_map_search_hit(hit) for hit in result.artifacts],
+        messages=[_map_search_hit(hit) for hit in result.messages],
+        structured_entries=[_map_search_hit(hit) for hit in result.structured_entries],
+    )
+
+
+def _map_search_hit(hit: SearchHit) -> SearchHitResponse:
+    payload: Mapping[str, Any]
+    if isinstance(hit.payload, Mapping):
+        payload = hit.payload
+    else:
+        payload = {}
+    return SearchHitResponse(id=hit.id, score=hit.score, payload=dict(payload))

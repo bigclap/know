@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     jaeger_port: int = 6831
     vllm_embedding_base_url: str = "http://ai-embeddings:8000"
     vllm_chat_base_url: str = "http://ai-chat:8000"
+    vllm_embedding_model: str = "Qwen/Qwen3-Embedding-8B"
+    vllm_chat_model: str = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
+    context_top_k_artifacts: int = 5
+    context_top_k_messages: int = 5
+    context_top_k_structured: int = 5
 
 
 @lru_cache(maxsize=1)

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatMessageRequest(BaseModel):
@@ -42,6 +42,31 @@ class StructuredEntryResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SearchHitResponse(BaseModel):
+    """Serialized form of a context search result."""
+
+    id: str
+    score: float
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContextResponse(BaseModel):
+    """Aggregated retrieval context returned with chat responses."""
+
+    query: str
+    artifacts: list[SearchHitResponse]
+    messages: list[SearchHitResponse]
+    structured_entries: list[SearchHitResponse]
+
+
+class ChatResponse(BaseModel):
+    """Full chat response including AI output and retrieval context."""
+
+    user_message: ChatMessageResponse
+    assistant_message: ChatMessageResponse
+    context: ContextResponse
 
 
 class ArtifactChildSummary(BaseModel):
