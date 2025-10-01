@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -38,7 +37,8 @@ def ensure_vector_extension(engine: Engine) -> None:
         return
 
     with engine.connect() as connection:
-        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        autocommit_connection = connection.execution_options(isolation_level="AUTOCOMMIT")
+        autocommit_connection.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
 
 
 # Provide a helper for production usage.
