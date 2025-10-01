@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     otlp_endpoint: Optional[str] = None
     jaeger_host: str = "jaeger"
     jaeger_port: int = 6831
+    vllm_embedding_base_url: str = "http://ai-embeddings:8000"
+    vllm_chat_base_url: str = "http://ai-chat:8000"
 
 
 @lru_cache(maxsize=1)
