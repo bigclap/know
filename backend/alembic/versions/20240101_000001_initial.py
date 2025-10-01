@@ -119,19 +119,53 @@ def upgrade() -> None:
         sa.Column("description", sa.Text(), nullable=True),
     )
 
-    op.create_index("ix_artifacts_summary_vector", "artifacts", ["summary_vector"], postgresql_using="ivfflat")
-    op.create_index("ix_messages_content_vector", "messages", ["content_vector"], postgresql_using="ivfflat")
+    op.create_index(
+        "ix_artifacts_summary_vector",
+        "artifacts",
+        ["summary_vector"],
+        postgresql_using="hnsw",
+        postgresql_with={"m": 16, "ef_construction": 64},
+    )
+    op.create_index(
+        "ix_messages_content_vector",
+        "messages",
+        ["content_vector"],
+        postgresql_using="hnsw",
+        postgresql_with={"m": 16, "ef_construction": 64},
+    )
     op.create_index(
         "ix_structured_entries_text_vector",
         "structured_entries",
         ["text_representation_vector"],
-        postgresql_using="ivfflat",
+        postgresql_using="hnsw",
+        postgresql_with={"m": 16, "ef_construction": 64},
     )
     op.create_index(
         "ix_schemas_description_vector",
         "schemas",
         ["description_vector"],
-        postgresql_using="ivfflat",
+        postgresql_using="hnsw",
+        postgresql_with={"m": 16, "ef_construction": 64},
+    )
+
+    op.execute(
+        """
+        CREATE OR REPLACE PROCEDURE refresh_hnsw_indexes(m_value integer DEFAULT 16, ef_value integer DEFAULT 64)
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            ALTER INDEX IF EXISTS ix_artifacts_summary_vector SET (m = m_value, ef_construction = ef_value);
+            ALTER INDEX IF EXISTS ix_messages_content_vector SET (m = m_value, ef_construction = ef_value);
+            ALTER INDEX IF EXISTS ix_structured_entries_text_vector SET (m = m_value, ef_construction = ef_value);
+            ALTER INDEX IF EXISTS ix_schemas_description_vector SET (m = m_value, ef_construction = ef_value);
+
+            REINDEX TABLE artifacts;
+            REINDEX TABLE messages;
+            REINDEX TABLE structured_entries;
+            REINDEX TABLE schemas;
+        END;
+        $$;
+        """
     )
 
 
@@ -140,6 +174,7 @@ def downgrade() -> None:
     op.drop_index("ix_structured_entries_text_vector", table_name="structured_entries")
     op.drop_index("ix_messages_content_vector", table_name="messages")
     op.drop_index("ix_artifacts_summary_vector", table_name="artifacts")
+    op.execute("DROP PROCEDURE IF EXISTS refresh_hnsw_indexes")
     op.drop_table("links")
     op.drop_constraint("fk_artifacts_source_entry", "artifacts", type_="foreignkey")
     op.drop_table("structured_entries")

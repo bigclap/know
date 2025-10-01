@@ -7,12 +7,14 @@ from typing import Any, Mapping
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
-from sqlmodel import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Message
 from ..repositories import ArtifactRepository, LinkRepository, MessageRepository
 from ..services.context_navigator import ContextResult, SearchHit
 from ..services.orchestrator import GenerationRequest, KnowledgeOrchestrator
+from ..services.vector_index import EmbeddingClient
+from .dependencies import get_embedding_client, get_orchestrator, get_session
 from .schemas import (
     ArtifactChildSummary,
     ArtifactDetailResponse,
@@ -37,29 +39,24 @@ def create_router(session_provider: SessionProvider, orchestrator: KnowledgeOrch
 
     router = APIRouter()
 
-    def get_session() -> Any:
-        yield from session_provider.dependency()
-
-    def get_orchestrator() -> KnowledgeOrchestrator:
-        return orchestrator
-
     @router.post("/chat/message", response_model=ChatResponse)
     async def post_chat_message(
         payload: ChatMessageRequest,
-        session: Session = Depends(get_session),
+        session: AsyncSession = Depends(get_session),
         ai_orchestrator: KnowledgeOrchestrator = Depends(get_orchestrator),
+        embedding_client: EmbeddingClient = Depends(get_embedding_client),
     ) -> ChatResponse:
-        artifact_repo = ArtifactRepository(session)
-        message_repo = MessageRepository(session)
+        artifact_repo = ArtifactRepository(session=session, embedding_client=embedding_client)
+        message_repo = MessageRepository(session=session, embedding_client=embedding_client)
 
-        artifact = artifact_repo.get(payload.artifact_id)
+        artifact = await artifact_repo.get(payload.artifact_id)
         if artifact is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
 
-        history_messages = message_repo.list_for_artifact(artifact_id=artifact.id)
+        history_messages = await message_repo.list_for_artifact(artifact_id=artifact.id)
         conversation_history = tuple(_message_to_prompt_dict(message) for message in history_messages)
 
-        user_message = message_repo.create(
+        user_message = await message_repo.create(
             artifact=artifact,
             content=payload.content,
             sender=payload.sender,
@@ -72,7 +69,7 @@ def create_router(session_provider: SessionProvider, orchestrator: KnowledgeOrch
             )
         )
 
-        assistant_message = message_repo.create(
+        assistant_message = await message_repo.create(
             artifact=artifact,
             content=generation.content,
             sender="assistant",
@@ -85,12 +82,12 @@ def create_router(session_provider: SessionProvider, orchestrator: KnowledgeOrch
         )
 
     @router.get("/artifacts/{artifact_id}", response_model=ArtifactDetailResponse)
-    def get_artifact(
+    async def get_artifact(
         artifact_id: UUID,
-        session: Session = Depends(get_session),
+        session: AsyncSession = Depends(get_session),
     ) -> ArtifactDetailResponse:
-        repo = ArtifactRepository(session)
-        artifact = repo.get_with_related(artifact_id)
+        repo = ArtifactRepository(session=session)
+        artifact = await repo.get_with_related(artifact_id)
         if artifact is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
 
@@ -116,17 +113,17 @@ def create_router(session_provider: SessionProvider, orchestrator: KnowledgeOrch
         status_code=status.HTTP_201_CREATED,
         response_model=LinkResponse,
     )
-    def create_link(
+    async def create_link(
         artifact_id: UUID,
         payload: LinkCreateRequest,
-        session: Session = Depends(get_session),
+        session: AsyncSession = Depends(get_session),
     ) -> LinkResponse:
-        artifact_repo = ArtifactRepository(session)
-        if artifact_repo.get(artifact_id) is None:
+        artifact_repo = ArtifactRepository(session=session)
+        if await artifact_repo.get(artifact_id) is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
 
-        link_repo = LinkRepository(session)
-        link = link_repo.create(
+        link_repo = LinkRepository(session=session)
+        link = await link_repo.create(
             source_type="artifact",
             source_id=artifact_id,
             target_type=payload.target_entity_type,
@@ -138,7 +135,11 @@ def create_router(session_provider: SessionProvider, orchestrator: KnowledgeOrch
         return LinkResponse.model_validate(link)
 
     @router.websocket("/ws/chat/{artifact_id}")
-    async def websocket_chat(websocket: WebSocket, artifact_id: UUID) -> None:
+    async def websocket_chat(
+        websocket: WebSocket,
+        artifact_id: UUID,
+        embedding_client: EmbeddingClient = Depends(get_embedding_client),
+    ) -> None:
         await websocket.accept()
 
         try:
@@ -150,16 +151,16 @@ def create_router(session_provider: SessionProvider, orchestrator: KnowledgeOrch
                     await websocket.send_json({"error": "content_required"})
                     continue
 
-                with session_provider.session_scope() as session:
-                    artifact_repo = ArtifactRepository(session)
-                    message_repo = MessageRepository(session)
+                async with session_provider.session_scope() as session:
+                    artifact_repo = ArtifactRepository(session=session)
+                    message_repo = MessageRepository(session=session, embedding_client=embedding_client)
 
-                    artifact = artifact_repo.get(artifact_id)
+                    artifact = await artifact_repo.get(artifact_id)
                     if artifact is None:
                         await websocket.send_json({"error": "artifact_not_found"})
                         continue
 
-                    message = message_repo.create(
+                    message = await message_repo.create(
                         artifact=artifact,
                         content=str(content),
                         sender=sender,

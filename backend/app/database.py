@@ -3,35 +3,30 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import SQLModel
 
 
-def create_engine_and_session(*, url: str, echo: bool = False) -> Tuple[Engine, sessionmaker]:
-    """Create an engine and a session factory for the given URL.
+def create_async_engine_and_session(
+    *, url: str, echo: bool = False
+) -> Tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
+    """Create an async engine and session factory for the given URL."""
 
-    SQLite is configured with an in-memory friendly setup for tests while
-    PostgreSQL benefits from connection pre-ping for long running sessions.
-    """
-
-    connect_args = {}
-    engine_kwargs = {"echo": echo, "future": True}
-    if url.startswith("sqlite"):  # pragma: no cover - deterministic branch
-        connect_args = {"check_same_thread": False}
+    engine_kwargs: dict[str, object] = {"echo": echo, "future": True}
+    if url.startswith("sqlite+aiosqlite"):  # pragma: no cover - deterministic branch
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
         engine_kwargs["poolclass"] = StaticPool
     else:
         engine_kwargs["pool_pre_ping"] = True
 
-    engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
-    SQLModel.metadata.bind = engine
-    SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
-    return engine, SessionLocal
+    engine = create_async_engine(url, **engine_kwargs)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    return engine, session_factory
 
 
-# Provide a helper for production usage.
-def init_db(url: str) -> Session:
-    engine, SessionLocal = create_engine_and_session(url=url)
-    SQLModel.metadata.create_all(engine)
-    return SessionLocal()
+async def init_db(url: str) -> AsyncSession:
+    engine, session_factory = create_async_engine_and_session(url=url)
+    async with engine.begin() as connection:
+        await connection.run_sync(SQLModel.metadata.create_all)
+    return session_factory()
