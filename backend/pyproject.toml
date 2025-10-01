@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "live-knowledge-backend"
+version = "0.1.0"
+description = "Backend services for the Live Knowledge platform"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.23",
+  "sqlmodel>=0.0.14",
+  "alembic>=1.12",
+  "pgvector>=0.2.4",
+  "psycopg[binary]>=3.1",
+  "python-dotenv>=1.0",
+  "pydantic-settings>=2.1",
+  "opentelemetry-sdk>=1.22",
+  "opentelemetry-instrumentation-fastapi>=0.46b0",
+  "opentelemetry-exporter-jaeger-thrift>=1.20",
+  "opentelemetry-exporter-otlp>=1.20",
+  "python-json-logger>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.3",
+  "black>=23.12",
+  "mypy>=1.7",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+addopts = "-q"
