@@ -12,7 +12,7 @@ from .api.routes import create_router
 from .api.session import SessionProvider
 from .ai.vllm import VLLMChatClient, VLLMEmbeddingClient
 from .config import Settings, get_settings
-from .database import create_engine_and_session
+from .database import create_engine_and_session, ensure_vector_extension
 from .observability import configure_logging, configure_tracing
 from .services import ContextNavigator, ContextNavigatorConfig, KnowledgeOrchestrator
 from .services.vector_index import NullVectorIndex
@@ -47,6 +47,7 @@ def create_app(*, orchestrator: Optional[KnowledgeOrchestrator] = None) -> FastA
 
     @app.on_event("startup")
     def _create_tables() -> None:
+        ensure_vector_extension(engine)
         SQLModel.metadata.create_all(engine)
 
     return app

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Tuple
 
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -30,8 +31,19 @@ def create_engine_and_session(*, url: str, echo: bool = False) -> Tuple[Engine, 
     return engine, SessionLocal
 
 
+def ensure_vector_extension(engine: Engine) -> None:
+    """Ensure the pgvector extension exists when using PostgreSQL."""
+
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect() as connection:
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+
 # Provide a helper for production usage.
 def init_db(url: str) -> Session:
     engine, SessionLocal = create_engine_and_session(url=url)
+    ensure_vector_extension(engine)
     SQLModel.metadata.create_all(engine)
     return SessionLocal()
