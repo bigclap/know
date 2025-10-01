@@ -41,6 +41,7 @@ A hybrid of **ECS** (data/behavior separation) and **EDA** (logic reacts to even
 * Subscribes to events (e.g., “`StartCommandComponent` added to `UserEntity`”) via `@EbcaPattern`.
 * On event: read needed components, decide, then add/remove components.
 * Communication: **event-driven via NATS**, not direct calls.
+* Make one job for one entity. SOLID! For example telegram app only working with telegram 
 
 #### 4) ComponentManager
 
