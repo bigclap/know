@@ -4,9 +4,10 @@ from __future__ import annotations
 from typing import List, Optional
 from uuid import UUID
 
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from .models import Artifact, Link, Schema, StructuredEntry
+from .models import Artifact, Link, Message, Schema, StructuredEntry
 
 
 class ArtifactRepository:
@@ -40,6 +41,18 @@ class ArtifactRepository:
 
     def get(self, artifact_id: UUID) -> Optional[Artifact]:
         statement = select(Artifact).where(Artifact.id == artifact_id)
+        return self.session.exec(statement).first()
+
+    def get_with_related(self, artifact_id: UUID) -> Optional[Artifact]:
+        statement = (
+            select(Artifact)
+            .where(Artifact.id == artifact_id)
+            .options(
+                selectinload(Artifact.children),
+                selectinload(Artifact.messages),
+                selectinload(Artifact.structured_entries),
+            )
+        )
         return self.session.exec(statement).first()
 
     def create_child(
@@ -120,6 +133,40 @@ class StructuredEntryRepository:
 
     def get(self, entry_id: UUID) -> Optional[StructuredEntry]:
         return self.session.get(StructuredEntry, entry_id)
+
+
+class MessageRepository:
+    """Persistence helpers for chat messages."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(
+        self,
+        *,
+        artifact: Artifact,
+        content: str,
+        sender: Optional[str],
+        vector: Optional[List[float]] = None,
+    ) -> Message:
+        message = Message(
+            artifact_id=artifact.id,
+            content=content,
+            sender=sender,
+            content_vector=vector,
+        )
+        self.session.add(message)
+        self.session.commit()
+        self.session.refresh(message)
+        return message
+
+    def list_for_artifact(self, artifact_id: UUID) -> List[Message]:
+        statement = (
+            select(Message)
+            .where(Message.artifact_id == artifact_id)
+            .order_by(Message.created_at)
+        )
+        return list(self.session.exec(statement))
 
 
 class LinkRepository:
