@@ -2,31 +2,33 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-from sqlalchemy.orm import sessionmaker
-from sqlmodel import Session
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 class SessionProvider:
-    """Wrap a ``sessionmaker`` to expose dependency-friendly interfaces."""
+    """Wrap an async ``sessionmaker`` to expose dependency-friendly interfaces."""
 
-    def __init__(self, session_factory: sessionmaker) -> None:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
-    @contextmanager
-    def session_scope(self) -> Iterator[Session]:
-        """Context manager yielding a managed SQLModel session."""
+    @asynccontextmanager
+    async def session_scope(self) -> AsyncIterator[AsyncSession]:
+        """Context manager yielding a managed SQLModel async session."""
 
-        session: Session = self._session_factory()
+        session: AsyncSession = self._session_factory()
         try:
             yield session
+        except Exception:
+            await session.rollback()
+            raise
         finally:
-            session.close()
+            await session.close()
 
-    def dependency(self) -> Iterator[Session]:
+    async def dependency(self) -> AsyncIterator[AsyncSession]:
         """FastAPI dependency that yields a session and ensures cleanup."""
 
-        with self.session_scope() as session:
+        async with self.session_scope() as session:
             yield session

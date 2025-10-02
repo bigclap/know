@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="KNOW_", env_file=".env", env_file_encoding="utf-8")
 
     database_url: str = (
-        "postgresql+psycopg://postgres:postgres@postgres:5432/knowledge"
+        "postgresql+psycopg_async://postgres:postgres@postgres:5432/knowledge"
     )
     otlp_endpoint: Optional[str] = None
     jaeger_host: str = "jaeger"

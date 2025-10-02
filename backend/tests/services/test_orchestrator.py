@@ -8,9 +8,30 @@ class FakeNavigator:
     async def collect(self, message: str) -> ContextResult:
         return ContextResult(
             query=message,
-            artifacts=[SearchHit(id="a1", score=0.9, payload={"title": "Artifact A", "summary": "Summary"})],
-            messages=[SearchHit(id="m1", score=0.8, payload={"content": "Message content"})],
-            structured_entries=[SearchHit(id="s1", score=0.7, payload={"text": "Structured"})],
+            artifacts=[
+                SearchHit(
+                    id="a1",
+                    score=0.9,
+                    payload={"title": "Artifact A", "summary": "Summary"},
+                    entity_type="artifact",
+                )
+            ],
+            messages=[
+                SearchHit(
+                    id="m1",
+                    score=0.8,
+                    payload={"content": "Message content"},
+                    entity_type="message",
+                )
+            ],
+            structured_entries=[
+                SearchHit(
+                    id="s1",
+                    score=0.7,
+                    payload={"text": "Structured"},
+                    entity_type="structured_entry",
+                )
+            ],
         )
 
 
