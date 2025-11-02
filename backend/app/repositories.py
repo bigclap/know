@@ -16,28 +16,23 @@ class ArtifactRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def create(
-        self,
-        *,
-        title: str,
-        summary: str,
-        summary_vector: Optional[List[float]],
-        parent_artifact_id: Optional[UUID] = None,
-        source_entry_id: Optional[UUID] = None,
-        applied_schema_id: Optional[UUID] = None,
-    ) -> Artifact:
+    def create(self, *, title: str, parent_id: Optional[UUID] = None) -> Artifact:
         artifact = Artifact(
             title=title,
-            summary=summary,
-            summary_vector=summary_vector,
-            parent_artifact_id=parent_artifact_id,
-            source_entry_id=source_entry_id,
-            applied_schema_id=applied_schema_id,
+            parent_artifact_id=parent_id,
         )
         self.session.add(artifact)
         self.session.commit()
         self.session.refresh(artifact)
         return artifact
+
+    def delete(self, *, artifact: Artifact) -> None:
+        self.session.delete(artifact)
+        self.session.commit()
+
+    def list(self) -> list[Artifact]:
+        statement = select(Artifact).order_by(Artifact.created_at)
+        return list(self.session.exec(statement))
 
     def get(self, artifact_id: UUID) -> Optional[Artifact]:
         statement = select(Artifact).where(Artifact.id == artifact_id)
@@ -55,24 +50,13 @@ class ArtifactRepository:
         )
         return self.session.exec(statement).first()
 
-    def create_child(
-        self,
-        *,
-        parent: Artifact,
-        title: str,
-        summary: str,
-        summary_vector: Optional[List[float]],
-        source_entry_id: Optional[UUID] = None,
-        applied_schema_id: Optional[UUID] = None,
-    ) -> Artifact:
-        return self.create(
-            title=title,
-            summary=summary,
-            summary_vector=summary_vector,
-            parent_artifact_id=parent.id,
-            source_entry_id=source_entry_id,
-            applied_schema_id=applied_schema_id,
-        )
+    def update(self, *, artifact: Artifact, **kwargs) -> Artifact:
+        for key, value in kwargs.items():
+            setattr(artifact, key, value)
+        self.session.add(artifact)
+        self.session.commit()
+        self.session.refresh(artifact)
+        return artifact
 
 
 class SchemaRepository:

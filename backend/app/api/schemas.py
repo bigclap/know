@@ -9,6 +9,30 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ArtifactCreateRequest(BaseModel):
+    """Incoming payload for creating a new artifact."""
+
+    title: str
+    parent_artifact_id: Optional[UUID] = None
+
+
+class ArtifactUpdateRequest(BaseModel):
+    """Incoming payload for updating an artifact."""
+
+    title: Optional[str] = None
+    summary: Optional[str] = None
+
+
+class ArtifactSummaryResponse(BaseModel):
+    """Summary of an artifact returned in a list."""
+
+    id: UUID
+    title: str
+    parent_artifact_id: Optional[UUID] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ChatMessageRequest(BaseModel):
     """Incoming payload for creating a chat message."""
 

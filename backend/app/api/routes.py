@@ -14,6 +14,9 @@ from ..repositories import ArtifactRepository, LinkRepository, MessageRepository
 from ..services.context_navigator import ContextResult, SearchHit
 from ..services.orchestrator import GenerationRequest, KnowledgeOrchestrator
 from .schemas import (
+    ArtifactCreateRequest,
+    ArtifactUpdateRequest,
+    ArtifactSummaryResponse,
     ArtifactChildSummary,
     ArtifactDetailResponse,
     ChatMessageRequest,
@@ -42,6 +45,87 @@ def create_router(session_provider: SessionProvider, orchestrator: KnowledgeOrch
 
     def get_orchestrator() -> KnowledgeOrchestrator:
         return orchestrator
+
+    @router.get("/artifacts/", response_model=list[ArtifactSummaryResponse])
+    def list_artifacts(
+        session: Session = Depends(get_session),
+    ) -> list[ArtifactSummaryResponse]:
+        repo = ArtifactRepository(session)
+        artifacts = repo.list()
+        return [ArtifactSummaryResponse.model_validate(artifact) for artifact in artifacts]
+
+    @router.post("/artifacts/", status_code=status.HTTP_201_CREATED, response_model=ArtifactDetailResponse)
+    def create_artifact(
+        payload: ArtifactCreateRequest,
+        session: Session = Depends(get_session),
+    ) -> ArtifactDetailResponse:
+        repo = ArtifactRepository(session)
+        artifact = repo.create(title=payload.title, parent_id=payload.parent_artifact_id)
+        db_artifact = repo.get_with_related(artifact.id)
+        if db_artifact is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create artifact")
+
+        children = [ArtifactChildSummary.model_validate(child) for child in _sorted_by_created(list(db_artifact.children))]
+        messages = [ChatMessageResponse.model_validate(message) for message in _sorted_by_created(list(db_artifact.messages))]
+        structured_entries = [
+            StructuredEntryResponse.model_validate(entry)
+            for entry in _sorted_by_created(list(db_artifact.structured_entries))
+        ]
+
+        return ArtifactDetailResponse(
+            id=db_artifact.id,
+            title=db_artifact.title,
+            summary=db_artifact.summary,
+            parent_artifact_id=db_artifact.parent_artifact_id,
+            children=children,
+            messages=messages,
+            structured_entries=structured_entries,
+        )
+
+    @router.patch("/artifacts/{artifact_id}", response_model=ArtifactDetailResponse)
+    def update_artifact(
+        artifact_id: UUID,
+        payload: ArtifactUpdateRequest,
+        session: Session = Depends(get_session),
+    ) -> ArtifactDetailResponse:
+        repo = ArtifactRepository(session)
+        artifact = repo.get(artifact_id)
+        if artifact is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
+
+        updated_artifact = repo.update(artifact=artifact, **payload.model_dump(exclude_unset=True))
+
+        db_artifact = repo.get_with_related(updated_artifact.id)
+        if db_artifact is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not update artifact")
+
+        children = [ArtifactChildSummary.model_validate(child) for child in _sorted_by_created(list(db_artifact.children))]
+        messages = [ChatMessageResponse.model_validate(message) for message in _sorted_by_created(list(db_artifact.messages))]
+        structured_entries = [
+            StructuredEntryResponse.model_validate(entry)
+            for entry in _sorted_by_created(list(db_artifact.structured_entries))
+        ]
+
+        return ArtifactDetailResponse(
+            id=db_artifact.id,
+            title=db_artifact.title,
+            summary=db_artifact.summary,
+            parent_artifact_id=db_artifact.parent_artifact_id,
+            children=children,
+            messages=messages,
+            structured_entries=structured_entries,
+        )
+
+    @router.delete("/artifacts/{artifact_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_artifact(
+        artifact_id: UUID,
+        session: Session = Depends(get_session),
+    ) -> None:
+        repo = ArtifactRepository(session)
+        artifact = repo.get(artifact_id)
+        if artifact is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
+        repo.delete(artifact=artifact)
 
     @router.post("/chat/message", response_model=ChatResponse)
     async def post_chat_message(

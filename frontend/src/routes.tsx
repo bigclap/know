@@ -11,7 +11,7 @@ export const routes = [
     element: <AppLayout />,
     children: [
       { index: true, element: <ArtifactsDashboard /> },
-      { path: 'chat', element: <ArtifactChat /> },
+      { path: 'artifacts/:artifactId', element: <ArtifactChat /> },
       { path: 'graph', element: <KnowledgeGraphView /> },
       { path: '*', element: <NotFound /> },
     ],
