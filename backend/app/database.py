@@ -1,15 +1,19 @@
 """Database utilities for engine and session management."""
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Tuple, Union
 
 from sqlalchemy.engine import Engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 
-def create_engine_and_session(*, url: str, echo: bool = False) -> Tuple[Engine, sessionmaker]:
+def create_engine_and_session(
+    *, url: str, echo: bool = False, is_async: bool = False
+) -> Tuple[Union[Engine, AsyncEngine], sessionmaker]:
     """Create an engine and a session factory for the given URL.
 
     SQLite is configured with an in-memory friendly setup for tests while
@@ -24,9 +28,17 @@ def create_engine_and_session(*, url: str, echo: bool = False) -> Tuple[Engine, 
     else:
         engine_kwargs["pool_pre_ping"] = True
 
-    engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
+    if is_async:
+        engine = create_async_engine(url, connect_args=connect_args, **engine_kwargs)
+        session_class = AsyncSession
+    else:
+        engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
+        session_class = Session
+
     SQLModel.metadata.bind = engine
-    SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
+    SessionLocal = sessionmaker(
+        bind=engine, class_=session_class, expire_on_commit=False
+    )
     return engine, SessionLocal
 
 

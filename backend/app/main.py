@@ -15,7 +15,7 @@ from .config import Settings, get_settings
 from .database import create_engine_and_session, ensure_vector_extension
 from .observability import configure_logging, configure_tracing
 from .services import ContextNavigator, ContextNavigatorConfig, KnowledgeOrchestrator
-from .services.vector_index import NullVectorIndex
+from .services.vector_index import PGVectorIndex
 
 
 def create_app(*, orchestrator: Optional[KnowledgeOrchestrator] = None) -> FastAPI:
@@ -28,9 +28,13 @@ def create_app(*, orchestrator: Optional[KnowledgeOrchestrator] = None) -> FastA
         otlp_endpoint=settings.otlp_endpoint,
     )
 
-    engine, session_factory = create_engine_and_session(url=settings.database_url)
+    engine, session_factory = create_engine_and_session(
+        url=settings.database_url, is_async=True
+    )
     session_provider = SessionProvider(session_factory)
-    orchestrator_instance = orchestrator or _build_default_orchestrator(settings)
+    orchestrator_instance = orchestrator or _build_default_orchestrator(
+        settings, session_provider
+    )
 
     app = FastAPI(title="Live Knowledge Backend", version="0.1.0")
     app.state.engine = engine
@@ -53,7 +57,9 @@ def create_app(*, orchestrator: Optional[KnowledgeOrchestrator] = None) -> FastA
     return app
 
 
-def _build_default_orchestrator(settings: Settings) -> KnowledgeOrchestrator:
+def _build_default_orchestrator(
+    settings: Settings, session_provider: SessionProvider
+) -> KnowledgeOrchestrator:
     embedding_client = VLLMEmbeddingClient(
         base_url=settings.vllm_embedding_base_url,
         model=settings.vllm_embedding_model,
@@ -64,7 +70,7 @@ def _build_default_orchestrator(settings: Settings) -> KnowledgeOrchestrator:
     )
     navigator = ContextNavigator(
         embedding_client=embedding_client,
-        vector_index=NullVectorIndex(),
+        vector_index=PGVectorIndex(session_provider.get_session()),
         config=ContextNavigatorConfig(
             artifact_namespace="artifacts",
             message_namespace="messages",
