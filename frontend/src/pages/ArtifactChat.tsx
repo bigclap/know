@@ -1,49 +1,76 @@
-import { Alert, Button, Group, Loader, Paper, Stack, Text, Textarea, Title } from '@mantine/core';
+import { Alert, Button, Group, Loader, Paper, Stack, Text, Textarea, TextInput, Title } from '@mantine/core';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useState } from 'react';
+import { apiClient } from '../api/client';
 import { useArtifactData } from '../store/hooks';
-import { useWorkspaceStore } from '../store/workspaceStore';
 
 export const ArtifactChat = () => {
-  const { artifact, status, error } = useArtifactData();
-  const sendMessage = useWorkspaceStore((state) => state.sendMessage);
+  const { artifact, artifactId, isLoading, error } = useArtifactData();
+  const queryClient = useQueryClient();
   const [message, setMessage] = useState('');
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [newArtifactTitle, setNewArtifactTitle] = useState('');
+
+  const messageMutation = useMutation({
+    mutationFn: apiClient.postChatMessage,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['artifacts', artifactId] });
+      setMessage('');
+    },
+  });
+
+  const artifactMutation = useMutation({
+    mutationFn: apiClient.createArtifact,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+      setNewArtifactTitle('');
+    },
+  });
 
   const thread = artifact?.messages ?? [];
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleMessageSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = message.trim();
-    if (!trimmed) {
+    if (!trimmed || !artifactId) {
       return;
     }
-    setIsSubmitting(true);
-    setSubmitError(null);
-    try {
-      await sendMessage({ content: trimmed, sender: 'user' });
-      setMessage('');
-    } catch (submitException) {
-      const messageText =
-        submitException instanceof Error ? submitException.message : 'Failed to send message';
-      setSubmitError(messageText);
-    } finally {
-      setIsSubmitting(false);
-    }
+    messageMutation.mutate({ artifact_id: artifactId, content: trimmed, sender: 'user' });
   };
 
-  const isLoading = status === 'loading' || status === 'idle';
+  const handleArtifactSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = newArtifactTitle.trim();
+    if (!trimmed || !artifactId) {
+      return;
+    }
+    artifactMutation.mutate({ title: trimmed, parent_artifact_id: artifactId });
+  };
+
 
   return (
     <Stack gap="lg">
       <div>
-        <Title order={2}>Artifact conversation</Title>
-        <Text c="dimmed">Discuss insights with collaborators and AI assistants.</Text>
+        <Title order={2}>{artifact?.title}</Title>
+        <Text c="dimmed">{artifact?.summary}</Text>
       </div>
 
-      {status === 'error' && error && (
+      <form onSubmit={handleArtifactSubmit}>
+        <Group>
+          <TextInput
+            placeholder="New sub-artifact title"
+            value={newArtifactTitle}
+            onChange={(event) => setNewArtifactTitle(event.currentTarget.value)}
+            style={{ flex: 1 }}
+          />
+          <Button type="submit" disabled={!newArtifactTitle.trim()} loading={artifactMutation.isPending}>
+            Create Sub-Artifact
+          </Button>
+        </Group>
+      </form>
+
+      {error && (
         <Alert color="red" title="Failed to load artifact thread">
-          {error}
+          {error.message}
         </Alert>
       )}
 
@@ -74,7 +101,7 @@ export const ArtifactChat = () => {
         ))}
       </Stack>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleMessageSubmit}>
         <Stack gap="xs">
           <Textarea
             placeholder="Share an update or ask the AI"
@@ -82,13 +109,13 @@ export const ArtifactChat = () => {
             value={message}
             onChange={(event) => setMessage(event.currentTarget.value)}
           />
-          {submitError && (
+          {messageMutation.isError && (
             <Alert color="red" title="Unable to send message">
-              {submitError}
+              {messageMutation.error.message}
             </Alert>
           )}
           <Group justify="flex-end">
-            <Button type="submit" disabled={!message.trim()} loading={isSubmitting}>
+            <Button type="submit" disabled={!message.trim()} loading={messageMutation.isPending}>
               Send message
             </Button>
           </Group>

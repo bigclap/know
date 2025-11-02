@@ -40,6 +40,22 @@ export type ArtifactDetailResponse = {
   structured_entries: StructuredEntryResponse[];
 };
 
+export type ArtifactCreateRequest = {
+  title: string;
+  parent_artifact_id?: string;
+};
+
+export type ChatResponse = {
+  user_message: ChatMessageResponse;
+  assistant_message: ChatMessageResponse;
+};
+
+export type ArtifactSummaryResponse = {
+  id: string;
+  title: string;
+  parent_artifact_id: string | null;
+};
+
 export type LinkCreateRequest = {
   target_entity_type: string;
   target_entity_id: string;
@@ -88,10 +104,13 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
 };
 
 export const apiClient = {
+  listArtifacts: () => request<ArtifactSummaryResponse[]>('/artifacts/'),
+  createArtifact: (payload: ArtifactCreateRequest) =>
+    request<ArtifactDetailResponse>('/artifacts/', withJsonDefaults({ method: 'POST', body: JSON.stringify(payload) })),
   getArtifactDetail: (artifactId: string) =>
     request<ArtifactDetailResponse>(`/artifacts/${artifactId}`),
   postChatMessage: (payload: ChatMessageRequest) =>
-    request<ChatMessageResponse>('/chat/message', withJsonDefaults({ method: 'POST', body: JSON.stringify(payload) })),
+    request<ChatResponse>('/chat/message', withJsonDefaults({ method: 'POST', body: JSON.stringify(payload) })),
   createLink: (artifactId: string, payload: LinkCreateRequest) =>
     request<LinkResponse>(
       `/artifacts/${artifactId}/links`,
