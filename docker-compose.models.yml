@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  ai-embeddings:
+    image: vllm/vllm-openai:latest
+    command: >-
+      --model Qwen/Qwen3-Embedding-8B
+      --trust-remote-code
+    environment:
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    ports:
+      - "8001:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - living-knowledge-net
+
+  ai-chat:
+    image: vllm/vllm-openai:latest
+    command: >-
+      --model Qwen/Qwen3-Omni-30B-A3B-Instruct
+      --trust-remote-code
+    environment:
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    ports:
+      - "8002:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - living-knowledge-net
+
+volumes:
+  hf_cache:
+
+networks:
+  living-knowledge-net:
+    name: living-knowledge-net

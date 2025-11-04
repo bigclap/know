@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  postgres-test:
+    image: ankane/pgvector:latest
+    environment:
+      POSTGRES_DB: knowledge_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432" # Use a different port to avoid conflicts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    environment:
+      KNOW_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres-test:5432/knowledge_test
+      KNOW_VLLM_EMBEDDING_BASE_URL: http://ai-embeddings:8000
+      KNOW_VLLM_CHAT_BASE_URL: http://ai-chat:8000
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    networks:
+      - default
+      - living-knowledge-net
+
+  frontend-test:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.test
+
+networks:
+  living-knowledge-net:
+    external: true
